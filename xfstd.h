@@ -103,6 +103,7 @@ public:
 	const char* c_str();
 	char& operator[](size_t);
 	char operator[](size_t) const;
+	char* find(const char*) const;
 	char* find(char, size_t = 1) const;
 	char* findif(bool (*f)(char), size_t = 1) const;
 	char* find(char, char*, char*, size_t = 1) const;
@@ -419,7 +420,6 @@ struct alignas(sizeof(T)) base
 	vec<T, sizeof...(x)> operator % (const base<T, y...> & v) const;
 	T len() const;
 	T operator !() const;
-
 	template<uint ...y>
 	bool operator == (const base<T, y...> & v) const;
 	template<uint ...y>
@@ -432,6 +432,8 @@ struct alignas(sizeof(T)) base
 	bool operator > (const base<T, y...> & v) const;
 	template<uint ...y>
 	bool operator >= (const base<T, y...> & v) const;
+	template<uint ...y>
+	vec<T, sizeof...(x)> operator>>(const base<T, y...> & v) const;
 };
 
 template<class T, uint...x>
@@ -1302,6 +1304,31 @@ inline char* xfstr::rend()
 inline char* xfstr::data()
 {
 	return data_;
+}
+
+inline char* xfstr::find(const char* str) const
+{
+	uint len = strlen(str);
+	if (size_ < len) return 0;
+	uint lim = size_ - len + 1;
+	char* c = 0;
+	for (uint i = 0; i < lim; ++i)
+	{
+		if (data_[i] == str[0])
+		{
+			c = data_ + i;
+			for (uint j = 1; j < len; ++j)
+			{
+				if (data_[i + j] != str[j])
+				{
+					c = 0;
+					break;
+				}
+			}
+			if (c) return c;
+		}
+	}
+	return c;
 }
 
 inline char* xfstr::find(char c, size_t pos) const
@@ -3522,10 +3549,10 @@ inline matrix3<T>::operator matrix4<T>() const
 {
 	return
 	{
-		vec4(row[0], 0),
-		vec4(row[1], 0),
-		vec4(row[2], 0),
-		vec4(0, 0, 0, 1)
+		row[0].x, row[0].y, row[0].z, 0,
+		row[1].x, row[1].y, row[1].z, 0,
+		row[2].x, row[2].y, row[2].z, 0,
+		0, 0, 0, 1,
 	};
 }
 
