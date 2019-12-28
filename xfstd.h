@@ -1,22 +1,17 @@
 #pragma once
 #include <iostream>
+#include <fstream>
 #include <random>
 #include <time.h>
 
 typedef unsigned int uint;
 
 float absl(float x);
-
 float cpysign(float x, float y);
-
 float ranf();
-
 float ranpf();
-
 bool isN(float x);
-
 bool is0(float x);
-
 float sign(float x);
 
 struct ct {
@@ -97,17 +92,20 @@ public:
 	xfstr& operator >> (uint& n);
 	xfstr& operator >> (float&);
 	xfstr& operator >> (double&);
+	xfstr& read(const char*);
 	std::istream& getline(std::istream&, char = '\n');
 	void erase(char*, char*);
 	void erase(char* i);
 	const char* c_str();
 	char& operator[](size_t);
 	char operator[](size_t) const;
-	char* find(const char*) const;
+	uint count(const char*) const;
+	char* find(const char*, uint = 1) const;
 	char* find(char, size_t = 1) const;
 	char* findif(bool (*f)(char), size_t = 1) const;
 	char* find(char, char*, char*, size_t = 1) const;
 	char* findif(bool (*f)(char), char*, char*, size_t = 1) const;
+	xfstr substr(const char*, const char*, uint = 1);
 	xfstr substr(size_t, size_t) const;
 	xfstr substr(size_t) const;
 	xfstr map(char(*f)(char)) const;
@@ -432,8 +430,8 @@ struct alignas(sizeof(T)) base
 	bool operator > (const base<T, y...> & v) const;
 	template<uint ...y>
 	bool operator >= (const base<T, y...> & v) const;
-	template<uint ...y>
-	vec<T, sizeof...(x)> operator>>(const base<T, y...> & v) const;
+
+	T& operator [](uint n) const;
 };
 
 template<class T, uint...x>
@@ -578,6 +576,15 @@ struct swizz<T, x, y, z, w> : base<T, x, y, z, w> {
 	};
 };
 
+template<class T, uint n>
+struct vec : type_proxy<base, T, n>::type
+{
+	using base = typename type_proxy<base, T, n>::type;
+	using base::operator=;
+	vec& operator=(const vec& v);
+	vec();
+	T data[n];
+};
 template<class T>
 struct vec<T, 2> : base<T, 0, 1> {
 	using base<T, 0, 1>::operator=;
@@ -1190,7 +1197,7 @@ inline xfstr& xfstr::operator<<(double n)
 
 inline xfstr& xfstr::operator>>(long& n)
 {
-	char* end;
+	static char* end;
 	n = strtol(data_, &end, 10);
 	erase(data_, end);
 	return *this;
@@ -1198,7 +1205,7 @@ inline xfstr& xfstr::operator>>(long& n)
 
 inline xfstr& xfstr::operator>>(unsigned long& n)
 {
-	char* end;
+	static char* end;
 	n = strtoul(data_, &end, 10);
 	erase(data_, end);
 	return *this;
@@ -1206,7 +1213,7 @@ inline xfstr& xfstr::operator>>(unsigned long& n)
 
 inline xfstr& xfstr::operator>>(int& n)
 {
-	char* end;
+	static char* end;
 	n = strtoul(data_, &end, 10);
 	erase(data_, end);
 	return *this;
@@ -1214,7 +1221,7 @@ inline xfstr& xfstr::operator>>(int& n)
 
 inline xfstr& xfstr::operator>>(uint& n)
 {
-	char* end;
+	static char* end;
 	n = strtoul(data_, &end, 10);
 	erase(data_, end);
 	return *this;
@@ -1222,7 +1229,7 @@ inline xfstr& xfstr::operator>>(uint& n)
 
 inline xfstr& xfstr::operator>>(float& n)
 {
-	char* end;
+	static char* end;
 	n = strtof(data_, &end);
 	erase(data_, end);
 	return *this;
@@ -1230,15 +1237,31 @@ inline xfstr& xfstr::operator>>(float& n)
 
 inline xfstr& xfstr::operator>>(double& n)
 {
-	char* end;
+	static char* end;
 	n = strtod(data_, &end);
 	erase(data_, end);
 	return *this;
 }
 
+inline xfstr& xfstr::read(const char* file)
+{
+	static char c;
+	std::ifstream s(file);
+	if (!s)
+	{
+		std::cout << "Cannot find file " << file << '\n';
+		return *this;
+	}
+	size_ = 0;
+	while (s.get(c)) *this += c;
+	s.close();
+	return *this;
+}
+
 inline std::istream& xfstr::getline(std::istream& s, char delim)
 {
-	clear(); char c;
+	clear();
+	static char c;
 	while (s.get(c) && c != delim) operator+=(c);
 	return s;
 }
@@ -1306,11 +1329,39 @@ inline char* xfstr::data()
 	return data_;
 }
 
-inline char* xfstr::find(const char* str) const
+inline uint xfstr::count(const char* str) const
 {
-	uint len = strlen(str);
+	static uint len, lim, c;
+	len = strlen(str);
 	if (size_ < len) return 0;
-	uint lim = size_ - len + 1;
+	lim = size_ - len + 1;
+	c = 0;
+	bool state = 1;
+	for (uint i = 0; i < lim; ++i)
+	{
+		if (data_[i] == str[0])
+		{
+			for (uint j = 1; j < len; ++j)
+			{
+				if (data_[i + j] != str[j])
+				{
+					state = 0;
+					break;
+				}
+			}
+			if (state) ++c;
+			state = 1;
+		}
+	}
+	return c;
+}
+
+inline char* xfstr::find(const char* str, uint pos) const
+{
+	static uint len, lim;
+	len = strlen(str);
+	if (size_ < len) return 0;
+	lim = size_ - len + 1;
 	char* c = 0;
 	for (uint i = 0; i < lim; ++i)
 	{
@@ -1325,7 +1376,11 @@ inline char* xfstr::find(const char* str) const
 					break;
 				}
 			}
-			if (c) return c;
+			if (c)
+			{
+				--pos;
+				if (pos == 0) return c;
+			}
 		}
 	}
 	return c;
@@ -1333,8 +1388,9 @@ inline char* xfstr::find(const char* str) const
 
 inline char* xfstr::find(char c, size_t pos) const
 {
-	char* i = begin();
-	char* j = end();
+	static char* i, * j;
+	i = begin();
+	j = end();
 	for (; i != j; ++i) {
 		if (*i == c) {
 			--pos;
@@ -1346,8 +1402,9 @@ inline char* xfstr::find(char c, size_t pos) const
 
 inline char* xfstr::findif(bool (*f)(char), size_t pos) const
 {
-	char* i = begin();
-	char* j = end();
+	static char* i, * j;
+	i = begin();
+	j = end();
 	for (; i != j; ++i) {
 		if (f(*i)) {
 			--pos;
@@ -1379,6 +1436,14 @@ inline char* xfstr::findif(bool (*f)(char), char* i, char* j, size_t pos) const
 		}
 	}
 	return 0;
+}
+
+inline xfstr xfstr::substr(const char* a, const char* b, uint pos)
+{
+	static char* i, * j;
+	i = find(a, pos);
+	j = find(b, pos) + strlen(b);
+	return substr(i - data_, j - i);
 }
 
 inline xfstr xfstr::substr(size_t pos, size_t len) const
@@ -1453,13 +1518,15 @@ inline std::ostream& operator << (std::ostream& s, const xfstr& str) {
 
 inline std::istream& operator>>(std::istream& s, xfstr& str)
 {
-	str.clear(); char c;
+	static char c;
+	str.clear();
 	while (s.get(c)) str += c;
 	return s;
 }
 
 inline xfstr operator + (const char* c, const xfstr& s) {
-	size_t len = strlen(c);
+	static uint len;
+	len = strlen(c);
 	xfstr re(len + s.size());
 	memcpy(re.data(), c, len);
 	memcpy(re.data() + len, s.data(), s.size());
@@ -2853,6 +2920,11 @@ inline T base<T, x...>::operator!() const
 	return ((*(T*)(this + x) * *(T*)(this + x)) + ...);
 }
 
+template<class T, uint ...x>
+inline T& base<T, x...>::operator[](uint n) const
+{
+	return *(T*)(this + n);
+}
 
 template<class T, uint ...x>
 template<uint ...y>
@@ -3091,6 +3163,18 @@ inline swizz<T, x, y, z, w>& swizz<T, x, y, z, w>::operator=(const swizz<T, a, b
 	return *this;
 }
 
+
+template<class T, uint n>
+vec<T, n>& vec<T, n>::operator=(const vec& v)
+{
+	return (vec&)base::operator=(v);
+}
+
+template<class T, uint n>
+inline vec<T, n>::vec()
+{
+}
+
 template<class T>
 inline vec<T, 2>& vec<T, 2>::operator=(const vec& v)
 {
@@ -3101,6 +3185,7 @@ inline vec<T, 2>& vec<T, 2>::operator=(const vec& v)
 
 template<class T>
 inline vec<T, 2>::vec()
+	: data{}
 {
 }
 
@@ -4162,3 +4247,4 @@ using mat2 = matrix2<float>;
 using mat3 = matrix3<float>;
 using mat4 = matrix4<float>;
 using quat = quaternion<float>;
+using umat3 = matrix3<uint>;
