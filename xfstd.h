@@ -48,6 +48,8 @@ struct ct {
 	static constexpr float _3half = 1.5f;
 };
 
+template<class> class xfvec;
+
 class xfstr {
 	size_t size_, cap_;
 	char* data_;
@@ -80,6 +82,11 @@ public:
 	bool operator != (const char*) const;
 	bool operator == (const xfstr&) const;
 	bool operator != (const xfstr&) const;
+	bool operator <  (const xfstr&) const;
+	bool operator <= (const xfstr&) const;
+	bool operator >  (const xfstr&) const;
+	bool operator >= (const xfstr&) const;
+
 	xfstr& operator << (int n);
 	xfstr& operator << (uint n);
 	xfstr& operator << (long);
@@ -96,16 +103,18 @@ public:
 	std::istream& getline(std::istream&, char = '\n');
 	void erase(char*, char*);
 	void erase(char* i);
-	const char* c_str();
-	char& operator[](size_t);
-	char operator[](size_t) const;
+	const char* c_str() const;
+	operator const char* () const;
 	uint count(const char*) const;
 	char* find(const char*, uint = 1) const;
+	char* find(const char*, char*, uint = 1) const;
 	char* find(char, size_t = 1) const;
 	char* findif(bool (*f)(char), size_t = 1) const;
 	char* find(char, char*, char*, size_t = 1) const;
 	char* findif(bool (*f)(char), char*, char*, size_t = 1) const;
 	xfstr substr(const char*, const char*, uint = 1);
+	xfstr inbtwn(char a, char b) const;
+	xfstr exbtwn(char a, char b) const;
 	xfstr substr(size_t, size_t) const;
 	xfstr substr(size_t) const;
 	xfstr map(char(*f)(char)) const;
@@ -298,6 +307,10 @@ public:
 	bool empty() const;
 	size_t size() const;
 	void clear();
+	xfvec<xfpair<key, val>>& Data()
+	{
+		return data;
+	}
 };
 
 template<class T>
@@ -832,7 +845,6 @@ struct matrix4 {
 	matrix4& operator /=	(T s);
 	matrix4 operator *		(T s) const;
 	matrix4 operator /		(T s) const;
-
 	operator matrix3<T>() const;
 };
 template<class T>
@@ -876,6 +888,8 @@ struct quaternion {
 	quaternion(T x, T y, T z, T w);
 	quaternion(const vec<T, 3>& v, T w);
 	quaternion(const quaternion& q);
+	quaternion(const matrix3<T>&);
+	quaternion(const matrix4<T>&);
 	T len() const;
 	T len2() const;
 	quaternion& operator=(const quaternion& q);
@@ -887,10 +901,8 @@ struct quaternion {
 	quaternion  operator -  (const quaternion& q) const;
 	quaternion& operator *= (T s);
 	quaternion& operator /= (T s);
-	quaternion  operator *  (T s);
-	quaternion  operator /  (T s);
-	friend quaternion  operator *  (T s, const quaternion& q);
-	friend quaternion  operator /  (T s, const quaternion& q);
+	quaternion  operator *  (float s) const;
+	quaternion  operator /  (float s) const;
 	quaternion  operator /  (const quaternion& q) const;
 	quaternion  operator *= (const quaternion& q);
 	quaternion  operator /= (const quaternion& q);
@@ -901,6 +913,11 @@ struct quaternion {
 	vec<T, 3> operator * (const base<T, x, y, z>& v) const;
 };
 
+template<class T>
+inline std::ostream& operator << (std::ostream& s, const quaternion<T>& q)
+{
+	return s << q.q;
+}
 template<class T, uint x, uint y, uint z>
 vec<T, 3> operator * (const base<T, x, y, z>& v, const quaternion<T>& q);
 quaternion<float> axAng(float x, float y, float z, float w);
@@ -1141,6 +1158,26 @@ inline bool xfstr::operator!=(const xfstr& s) const
 	return strcmp(data_, s.data_) != 0;
 }
 
+inline bool xfstr::operator<(const xfstr& s) const
+{
+	return strcmp(data_, s.data_) < 0;;
+}
+
+inline bool xfstr::operator<=(const xfstr& s) const
+{
+	return strcmp(data_, s.data_) <= 0;;
+}
+
+inline bool xfstr::operator>(const xfstr& s) const
+{
+	return strcmp(data_, s.data_) > 0;;
+}
+
+inline bool xfstr::operator>=(const xfstr& s) const
+{
+	return strcmp(data_, s.data_) >= 0;;
+}
+
 inline xfstr& xfstr::operator<<(int n)
 {
 	const uint len = static_cast<uint>(_scprintf("%d", n));
@@ -1282,21 +1319,14 @@ inline void xfstr::erase(char* i)
 	new(data_ + --size_)char(0);
 }
 
-inline const char* xfstr::c_str()
+inline const char* xfstr::c_str() const
 {
 	return data_;
 }
 
-inline char& xfstr::operator[](size_t i)
+inline xfstr::operator const char* () const
 {
-	if (!(i < size_)) throw;
-	return *(data_ + i);
-}
-
-inline char xfstr::operator[](size_t i) const
-{
-	if (!(i < size_)) throw;
-	return *(data_ + i);
+	return data_;
 }
 
 inline char* xfstr::data() const
@@ -1386,6 +1416,37 @@ inline char* xfstr::find(const char* str, uint pos) const
 	return c;
 }
 
+inline char* xfstr::find(const char* str, char* begin_, uint pos) const
+{
+	static uint len, lim, begin;
+	len = strlen(str);
+	begin = begin_ - data_;
+	if (size_ - begin < len) return 0;
+	lim = size_ - len + 1;
+	char* c = 0;
+	for (uint i = begin; i < lim; ++i)
+	{
+		if (data_[i] == str[0])
+		{
+			c = data_ + i;
+			for (uint j = 1; j < len; ++j)
+			{
+				if (data_[i + j] != str[j])
+				{
+					c = 0;
+					break;
+				}
+			}
+			if (c)
+			{
+				--pos;
+				if (pos == 0) return c;
+			}
+		}
+	}
+	return c;
+}
+
 inline char* xfstr::find(char c, size_t pos) const
 {
 	static char* i, * j;
@@ -1446,6 +1507,20 @@ inline xfstr xfstr::substr(const char* a, const char* b, uint pos)
 	return substr(i - data_, j - i);
 }
 
+inline xfstr xfstr::exbtwn(char a, char b) const
+{
+	static char* i, * j;
+	i = find(a);
+	j = find(b, ++i, end());
+	return substr(i - data_, j - i);
+}
+inline xfstr xfstr::inbtwn(char a, char b) const
+{
+	static char* i, * j;
+	i = find(a);
+	j = find(b, i + 1, end());
+	return substr(i - data_, ++j - i );
+}
 inline xfstr xfstr::substr(size_t pos, size_t len) const
 {
 	if (pos >= size_) return xfstr();
@@ -1904,6 +1979,8 @@ template<class c>
 inline xfvec<c>::xfvec(xfvec&& v)
 	: size_(v.size_), cap_(v.cap_), data_(v.data_)
 {
+	v.size_ = 0;
+	v.cap_ = 0;
 	v.data_ = nullptr;
 }
 
@@ -3185,7 +3262,7 @@ inline vec<T, 2>& vec<T, 2>::operator=(const vec& v)
 
 template<class T>
 inline vec<T, 2>::vec()
-	: data{}
+	: data {}
 {
 }
 
@@ -4070,6 +4147,74 @@ inline quaternion<T>::quaternion(const quaternion<T>& q)
 }
 
 template<class T>
+inline quaternion<T>::quaternion(const matrix3<T>& m)
+{
+	float tr = m(0, 0) + m(1, 1) + m(2, 2);
+	if ( tr > 0.f) {
+		float S = 0.5f / sqrt(tr + 1.f);
+		w = 0.25f / S;
+		x = (m(2, 1) - m(1, 2)) * S;
+		y = (m(0, 2) - m(2, 0)) * S;
+		z = (m(1, 0) - m(0, 1)) * S;
+	}
+	else if (m(0, 0) > m(1, 1) && m(0, 0) > m(2, 2)) {
+		float S = 0.5f / sqrt(1.f + m(0, 0) - m(1, 1) - m(2, 2));
+		w = (m(2, 1) - m(1, 2)) * S;
+		x = 0.25f / S;			
+		y = (m(0, 1) + m(1, 0)) * S;
+		z = (m(0, 2) + m(2, 0)) * S;
+	}
+	else if (m(1, 1) > m(2, 2)) {
+		float S = 0.5f / sqrt(1.f + m(1, 1) - m(0, 0) - m(2, 2));
+		w = (m(0, 2) - m(2, 0)) * S;
+		x = (m(0, 1) + m(1, 0)) * S;
+		y = 0.25f / S;			
+		z = (m(1, 2) + m(2, 1)) * S;
+	}
+	else {
+		float S = 0.5f / sqrt(1.f + m(2, 2) - m(0, 0) - m(1, 1));
+		w = (m(1, 0) - m(0, 1)) * S;
+		x = (m(0, 2) + m(2, 0)) * S;
+		y = (m(1, 2) + m(2, 1)) * S;
+		z = 0.25f / S;
+	}
+}
+
+template<class T>
+inline quaternion<T>::quaternion(const matrix4<T>& m)
+{
+	float tr = m(0, 0) + m(1, 1) + m(2, 2);
+	if (tr > 0.f) {
+		float S = 0.5f / sqrt(tr + 1.f);
+		w = 0.25f / S;
+		x = (m(2, 1) - m(1, 2)) * S;
+		y = (m(0, 2) - m(2, 0)) * S;
+		z = (m(1, 0) - m(0, 1)) * S;
+	}
+	else if (m(0, 0) > m(1, 1) && m(0, 0) > m(2, 2)) {
+		float S = 0.5f / sqrt(1.f + m(0, 0) - m(1, 1) - m(2, 2));
+		w = (m(2, 1) - m(1, 2)) * S;
+		x = 0.25f / S;
+		y = (m(0, 1) + m(1, 0)) * S;
+		z = (m(0, 2) + m(2, 0)) * S;
+	}
+	else if (m(1, 1) > m(2, 2)) {
+		float S = 0.5f / sqrt(1.f + m(1, 1) - m(0, 0) - m(2, 2));
+		w = (m(0, 2) - m(2, 0)) * S;
+		x = (m(0, 1) + m(1, 0)) * S;
+		y = 0.25f / S;
+		z = (m(1, 2) + m(2, 1)) * S;
+	}
+	else {
+		float S = 0.5f / sqrt(1.f + m(2, 2) - m(0, 0) - m(1, 1));
+		w = (m(1, 0) - m(0, 1)) * S;
+		x = (m(0, 2) + m(2, 0)) * S;
+		y = (m(1, 2) + m(2, 1)) * S;
+		z = 0.25f / S;
+	}
+}
+
+template<class T>
 inline T quaternion<T>::len() const
 {
 	return sqrtf(x * x + y * y + z * z + w * w);
@@ -4142,26 +4287,26 @@ inline quaternion<T>& quaternion<T>::operator/=(T s)
 }
 
 template<class T>
-inline quaternion<T> quaternion<T>::operator*(T s)
-{
-	return { x * s, y * s, z * s, w * s };
-}
-
-template<class T>
-inline quaternion<T> quaternion<T>::operator/(T s)
-{
-	s = 1 / s;
-	return { x * s, y * s, z * s, w * s };
-}
-
-template<class T>
-inline quaternion<T> operator*(T s, const quaternion<T>& q)
+inline quaternion<T>  quaternion<T>::operator*(float s) const
 {
 	return { q.x * s, q.y * s, q.z * s, q.w * s };
 }
 
 template<class T>
-inline quaternion<T> operator/(T s, const quaternion<T>& q)
+inline quaternion<T>  quaternion<T>::operator/(float s) const
+{
+	s = 1 / s;
+	return { q.x * s, q.y * s, q.z * s, q.w * s };
+}
+
+template<class T>
+inline quaternion<T> operator*(float s, const quaternion<T>& q)
+{
+	return { q.x * s, q.y * s, q.z * s, q.w * s };
+}
+
+template<class T>
+inline quaternion<T> operator/(float s, const quaternion<T>& q)
 {
 	s /= q.len2();
 	return ~q *= s;
